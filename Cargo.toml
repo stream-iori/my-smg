@@ -1,0 +1,26 @@
+[package]
+name = "my-smg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+tokio = { version = "1.53.1", features = [
+    "macros",
+    "net",
+    "rt-multi-thread",
+    "time",
+    "sync",
+    "signal",
+    "io-util",
+] }
+futures-util = "0.3"
+axum = "0.8.9"
+reqwest = { version = "0.13.5", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+
+[dev-dependencies]
+rstest = "0.28"

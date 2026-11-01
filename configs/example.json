@@ -1,0 +1,13 @@
+{
+  "workers": [
+    {
+      "id": "worker-1",
+      "address": "http://127.0.0.1:3001"
+    },
+    {
+      "id": "worker-2",
+      "address": "http://127.0.0.1:3002"
+    }
+  ],
+  "policy": "round-robin"
+}

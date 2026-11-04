@@ -1,7 +1,10 @@
+//! 健康节点选择策略与分发入口。
+
 use std::sync::Arc;
 
 use crate::worker::{HealthStatus, Worker};
 
+/// 按输入顺序返回健康节点索引；索引仅对应本次输入快照。
 pub fn healthy_worker_indices(workers: &[Arc<Worker>]) -> Vec<usize> {
     let mut indices = Vec::new();
 
@@ -13,10 +16,13 @@ pub fn healthy_worker_indices(workers: &[Arc<Worker>]) -> Vec<usize> {
     indices
 }
 
+/// 根据同一份节点快照选择目标，允许策略保存轮询状态。
 pub trait Policy {
+    /// 返回输入快照中的索引；无健康节点时返回 `None`。
     fn select(&mut self, workers: &[Arc<Worker>]) -> Option<usize>;
 }
 
+/// 每次选择快照中的第一个健康节点。
 #[derive(Debug)]
 pub struct FirstHealthy;
 
@@ -39,6 +45,7 @@ impl Policy for FirstHealthy {
     }
 }
 
+/// 在本次快照的健康节点间轮询。
 #[derive(Debug)]
 pub struct RoundRobin {
     next: usize,
@@ -73,10 +80,12 @@ impl Policy for RoundRobin {
 //P:Policy表示任何实现了Policy的具体类型
 //编译器知道每次调用的具体类型，并为对应类型生成调用代码
 //这种行为叫静态分发,带类型约束的泛型工具方法
+/// 静态分发入口，用于比较具体策略的行为。
 pub fn select_with_policy<P: Policy>(policy: &mut P, workers: &[Arc<Worker>]) -> Option<usize> {
     policy.select(workers)
 }
 
+/// 动态分发入口，支持运行时切换策略。
 pub fn select_with_dynamic_policy(
     policy: &mut dyn Policy,
     workers: &[Arc<Worker>],
@@ -155,7 +164,7 @@ mod tests {
 
     #[test]
     fn first_healthy_selects_first_available_worker() {
-        let mut worker_a = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
+        let worker_a = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
         let worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3212".to_string());
         let worker_c = Worker::new(String::from("worker-c"), "127.0.0.1:3212".to_string());
 
@@ -169,7 +178,7 @@ mod tests {
 
     #[test]
     fn first_healthy_returns_none_when_none_are_available() {
-        let mut worker = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
+        let worker = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
         worker.set_status(HealthStatus::Unhealthy);
 
         let workers = vec![Arc::new(worker)];
@@ -212,8 +221,8 @@ mod tests {
 
     #[test]
     fn all_unhealthy_workers_have_no_healthy_indices() {
-        let mut worker_a = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
-        let mut worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3213".to_string());
+        let worker_a = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
+        let worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3213".to_string());
 
         worker_a.set_status(HealthStatus::Unhealthy);
         worker_b.set_status(HealthStatus::Unhealthy);
@@ -226,7 +235,7 @@ mod tests {
     #[test]
     fn resturs_original_indices_of_healthy_workers() {
         let worker_a = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
-        let mut worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3213".to_string());
+        let worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3213".to_string());
         worker_b.set_status(HealthStatus::Unhealthy);
 
         let worker_c = Worker::new(String::from("worker-c"), "127.0.0.1:3214".to_string());
@@ -259,7 +268,7 @@ mod tests {
     #[test]
     fn round_robin_skips_unhealthy_workers() {
         let worker_a = Worker::new(String::from("worker-a"), "127.0.0.1:3212".to_string());
-        let mut worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3213".to_string());
+        let worker_b = Worker::new(String::from("worker-b"), "127.0.0.1:3213".to_string());
         let worker_c = Worker::new(String::from("worker-c"), "127.0.0.1:3214".to_string());
 
         worker_b.set_status(HealthStatus::Unhealthy);
@@ -275,11 +284,11 @@ mod tests {
 
     #[test]
     fn round_robin_returns_none_when_all_workers_are_unhealthy() {
-        let mut worker_a = Arc::new(Worker::new(
+        let worker_a = Arc::new(Worker::new(
             String::from("worker-a"),
             "127.0.0.1:3212".to_string(),
         ));
-        let mut worker_b = Arc::new(Worker::new(
+        let worker_b = Arc::new(Worker::new(
             String::from("worker-b"),
             "127.0.0.1:3213".to_string(),
         ));
@@ -295,7 +304,7 @@ mod tests {
 
     #[test]
     fn round_robin_responds_to_worker_health_changes() {
-        let mut workers = vec![
+        let workers = vec![
             Arc::new(Worker::new(
                 String::from("worker-a"),
                 "127.0.0.1:3212".to_string(),

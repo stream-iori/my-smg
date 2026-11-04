@@ -1,17 +1,15 @@
+//! 下游写停滞超时；只在真正写出字节后重置计时。
+
 use axum::serve::Listener;
-use std::{
-    future::Future,
-    io::{self, IoSlice},
-    net::SocketAddr,
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
-};
-use tokio::{
-    io::{AsyncRead, AsyncWrite, ReadBuf},
-    net::{TcpListener, TcpStream},
-    time::Sleep,
-};
+use std::future::Future;
+use std::io::{self, IoSlice};
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::Sleep;
 
 pub(crate) struct WriteTimeoutListener {
     inner: TcpListener,
@@ -32,13 +30,13 @@ pub(crate) struct WriteTimeoutIo {
 
 impl WriteTimeoutIo {
     fn check_timeout(&mut self, cx: &mut Context<'_>) -> io::Result<()> {
-        if let Some(timer) = self.write_timer.as_mut() {
-            if timer.as_mut().poll(cx).is_ready() {
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "downstream socket write stalled",
-                ));
-            }
+        if let Some(timer) = self.write_timer.as_mut()
+            && timer.as_mut().poll(cx).is_ready()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "downstream socket write stalled",
+            ));
         }
         Ok(())
     }

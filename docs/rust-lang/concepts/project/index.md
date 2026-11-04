@@ -7,7 +7,7 @@
 | 文章 | 解决的问题 | 前置 | 源码入口 |
 |---|---|---|---|
 | [Package 与 Crate：一个工程里有几棵编译树](package-and-crate.md) | 为什么 main.rs 不能访问库的 pub(crate) 项？ | 无；可以直接阅读。 | [Cargo.toml](../../../../Cargo.toml)：`[package]` |
-| [模块声明如何找到文件](modules-and-files.md) | circuit_breaker.rs 与 circuit_breaker/ 是两个模块吗？ | [Package 与 Crate：一个工程里有几棵编译树](package-and-crate.md)基础部分；项目应用另按节标题补前置。 | [src/circuit_breaker.rs](../../../../src/circuit_breaker.rs)：`pub mod gate` |
+| [模块声明如何找到文件](modules-and-files.md) | gateway.rs 与 gateway/ 是两个模块吗？ | [Package 与 Crate：一个工程里有几棵编译树](package-and-crate.md)基础部分；项目应用另按节标题补前置。 | [src/gateway.rs](../../../../src/gateway.rs)：`mod retry` |
 | [crate、self、super 与 use](paths-and-imports.md) | super 指父类还是父模块？ | [模块声明如何找到文件](modules-and-files.md)基础部分；项目应用另按节标题补前置。 | [src/gateway/retry.rs](../../../../src/gateway/retry.rs)：`use super::is_retryable_status` |
 | [pub 与受限可见性](visibility.md) | 祖父模块能否访问 pub(super) 的函数？ | [模块声明如何找到文件](modules-and-files.md) · [crate、self、super 与 use](paths-and-imports.md)基础部分；项目应用另按节标题补前置。 | [src/gateway.rs](../../../../src/gateway.rs)：`pub(super) struct GatewayState` |
 | [pub use：内部组织与公开入口](reexports.md) | 公开入口变短是否意味着目录变浅？ | [crate、self、super 与 use](paths-and-imports.md) · [pub 与受限可见性](visibility.md)基础部分；项目应用另按节标题补前置。 | [src/lib.rs](../../../../src/lib.rs)：`pub mod worker` |

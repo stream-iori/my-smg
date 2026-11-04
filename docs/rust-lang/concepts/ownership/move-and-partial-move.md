@@ -212,7 +212,7 @@ assert!(payment.channel_transaction_id.is_none());
 ## 所有权发生了什么
 
 ```rust
-let config = GatewayConfig::from_json(input)?;
+let config = GatewayConfig::parse_json(input)?;
 ```
 
 - `input: &str` 只是被借用；

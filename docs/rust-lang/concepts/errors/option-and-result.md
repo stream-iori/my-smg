@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [struct、enum、impl 与 Self](../values/struct-enum-and-impl.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/policy.rs](../../../../src/policy.rs)：Option<usize>；[src/config.rs](../../../../src/config.rs)：配置加载的 Result |
+| 源码入口 | [src/policy.rs](../../../../src/policy.rs)：Option<usize>；[src/gateway_config.rs](../../../../src/gateway_config.rs)：配置加载的 Result |
 | 阅读时机 | T04 先读 Option；Result 在阶段 4 使用。 |
 
 ## Option：有值，或者没有值

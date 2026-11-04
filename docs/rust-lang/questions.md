@@ -210,7 +210,7 @@
 | generation 为什么不是 request_id | [状态版本与迟到结果](walkthroughs/circuit-permit.md) |
 | Permit 与 SOLID、系统设计有什么关系 | [职责、版本校验与生命周期](advanced/design-decisions.md) |
 | `pub mod`、`crate::`、`use` 看不懂 | [模块与可见性](concepts/project/package-and-crate.md) |
-| `pub mod gate;` 为什么关联到 `circuit_breaker/gate.rs` | [模块声明如何定位文件](concepts/project/modules-and-files.md) |
+| `mod retry;` 为什么关联到 `gateway/retry.rs` | [模块声明如何定位文件](concepts/project/modules-and-files.md) |
 | `circuit_breaker.rs` 与同名目录是两个模块吗，super 如何找到父类型 | [文件、目录与模块树的对应关系](concepts/project/modules-and-files.md) |
 | `gateway/tests.rs` 和 `gateway/tests/mod.rs` 有什么区别 | [两种模块文件布局](concepts/project/modules-and-files.md) |
 | `type HttpResponse` 是新类型吗 | [类型别名](concepts/types/aliases-and-newtypes.md) |

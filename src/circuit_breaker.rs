@@ -1,5 +1,6 @@
+//! 熔断状态机与冷却恢复。
+
 use std::time::{Duration, Instant};
-pub mod gate;
 
 /// Closed：正常放行。
 /// Open：拒绝请求，等待冷却。
@@ -11,6 +12,7 @@ pub enum CircuitState {
     HalfOpen,
 }
 
+/// 单线程状态机；共享访问及旧请求结果隔离由 CircuitGate 负责。
 #[derive(Debug)]
 pub struct CircuitBreaker {
     state: CircuitState,
@@ -25,7 +27,8 @@ pub struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    pub fn new(failure_threshold: usize, cooldown: Duration) -> Result<Self, &'static str> {
+    /// 创建状态机；失败阈值和冷却时长必须大于零。
+    pub fn try_new(failure_threshold: usize, cooldown: Duration) -> Result<Self, &'static str> {
         if failure_threshold == 0 {
             return Err("failure threshold must be greater than zero");
         }
@@ -47,6 +50,7 @@ impl CircuitBreaker {
         self.state
     }
 
+    /// 判断并预留请求资格；冷却结束后只放行一个半开探测。
     pub fn allow_request(&mut self, now: Instant) -> bool {
         match self.state {
             CircuitState::Closed => true,
@@ -75,6 +79,7 @@ impl CircuitBreaker {
         }
     }
 
+    /// 记录有效请求的成功；半开状态恢复关闭，打开状态忽略迟到结果。
     pub fn record_success(&mut self) {
         match self.state {
             CircuitState::Closed => {
@@ -94,6 +99,7 @@ impl CircuitBreaker {
         }
     }
 
+    /// 累计连续失败；达到阈值或半开探测失败时重新开始冷却。
     pub fn record_failure(&mut self, now: Instant) {
         match self.state {
             CircuitState::Closed => {
@@ -135,7 +141,7 @@ mod tests {
 
         for (name, threshold, failures, expected_state, expected_allowed) in cases {
             let now = Instant::now();
-            let mut breaker = CircuitBreaker::new(threshold, Duration::from_secs(5))
+            let mut breaker = CircuitBreaker::try_new(threshold, Duration::from_secs(5))
                 .expect("valid configuration");
 
             for _ in 0..failures {
@@ -151,7 +157,7 @@ mod tests {
     fn success_resets_consecutive_failures() {
         let now = Instant::now();
         let mut breaker =
-            CircuitBreaker::new(3, Duration::from_secs(5)).expect("valid configuration");
+            CircuitBreaker::try_new(3, Duration::from_secs(5)).expect("valid configuration");
 
         breaker.record_failure(now);
         breaker.record_failure(now);
@@ -174,7 +180,7 @@ mod tests {
     fn late_results_do_not_reset_cooldown() {
         let now = Instant::now();
         let mut breaker =
-            CircuitBreaker::new(1, Duration::from_secs(5)).expect("valid configuration");
+            CircuitBreaker::try_new(1, Duration::from_secs(5)).expect("valid configuration");
 
         breaker.record_failure(now);
 
@@ -201,7 +207,7 @@ mod tests {
         for (name, elapsed_secs, expected_allowed, expected_state) in cases {
             let now = Instant::now();
             let mut breaker =
-                CircuitBreaker::new(1, Duration::from_secs(5)).expect("valid configuration");
+                CircuitBreaker::try_new(1, Duration::from_secs(5)).expect("valid configuration");
 
             breaker.record_failure(now);
 
@@ -223,7 +229,7 @@ mod tests {
     fn successful_probe_closes_circuit() {
         let now = Instant::now();
         let mut breaker =
-            CircuitBreaker::new(1, Duration::from_secs(5)).expect("valid configuration");
+            CircuitBreaker::try_new(1, Duration::from_secs(5)).expect("valid configuration");
 
         breaker.record_failure(now);
 
@@ -241,7 +247,7 @@ mod tests {
     fn failed_probe_starts_new_cooldown() {
         let now = Instant::now();
         let mut breaker =
-            CircuitBreaker::new(1, Duration::from_secs(5)).expect("valid configuration");
+            CircuitBreaker::try_new(1, Duration::from_secs(5)).expect("valid configuration");
 
         breaker.record_failure(now);
 
@@ -267,7 +273,7 @@ mod tests {
 
         for (name, threshold, cooldown) in cases {
             assert!(
-                CircuitBreaker::new(threshold, cooldown).is_err(),
+                CircuitBreaker::try_new(threshold, cooldown).is_err(),
                 "case: {name}",
             );
         }

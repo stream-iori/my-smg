@@ -1,6 +1,11 @@
 //! 健康检查：探测失败标记不健康，后续成功探测恢复健康。
+use crate::gateway::management::{check_worker_health, start_health_checks};
+use crate::gateway::tests::support::{HealthFixture, ManagedTask, health_fixture, wait_until};
+use axum::http::StatusCode;
+use my_smg::worker::HealthStatus;
+use std::sync::Arc;
+use std::time::Duration;
 
-use super::*;
 use rstest::rstest;
 
 #[rstest]

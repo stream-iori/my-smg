@@ -1,12 +1,28 @@
 //! 真实 HTTP 链路：先确认首段到达，再制造中途失败或客户端断开。
-
-use super::*;
-use std::sync::atomic::AtomicUsize;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
-    sync::oneshot,
+use super::stream_worker_state;
+use crate::gateway::chat_stream::chat_stream;
+use crate::gateway::gateway_state::{ChatRequest, GatewayState};
+use crate::gateway::tests::support::{
+    ManagedTask, TestServer, gateway_state_with_workers, start_test_server, wait_until,
 };
+use axum::Router;
+use axum::body::Body;
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::routing::post;
+use futures_util::stream;
+use my_smg::worker::Worker;
+use rstest::rstest;
+use std::io;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use tokio::time::Instant as TokioInstant;
+
+use std::sync::atomic::AtomicUsize;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
 
 const FIRST_EVENT: &[u8] = b"data: first\n\n";
 
@@ -52,10 +68,10 @@ async fn read_request(socket: &mut TcpStream) {
         if line == "\r\n" {
             break;
         }
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = Some(value.trim().parse::<usize>().expect("content length"));
-            }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = Some(value.trim().parse::<usize>().expect("content length"));
         }
     }
     let length = content_length.expect("test request should have a content length");
@@ -369,8 +385,8 @@ async fn slow_client_write_timeout_releases_stream_resources(
     #[case] write_timeout: Duration,
     #[case] should_timeout: bool,
 ) {
+    use crate::write_timeout_listener::WriteTimeoutListener;
     use std::sync::atomic::AtomicBool;
-    use crate::write_timeout::WriteTimeoutListener;
 
     struct UpstreamBodyGuard(Arc<AtomicBool>);
     impl Drop for UpstreamBodyGuard {
@@ -394,36 +410,57 @@ async fn slow_client_write_timeout_releases_stream_resources(
                     state.1.fetch_add(1, Ordering::Relaxed);
                     Some((Ok::<_, io::Error>(state.2.clone()), state))
                 });
-                ([(CONTENT_TYPE, "text/event-stream")], Body::from_stream(chunks))
+                (
+                    [(CONTENT_TYPE, "text/event-stream")],
+                    Body::from_stream(chunks),
+                )
             }
         }),
-    )).await;
+    ))
+    .await;
     let (worker, state) = stream_worker_state(&upstream);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let app = Router::new().route("/chat/stream", post(chat_stream)).with_state(Arc::clone(&state));
+    let app = Router::new()
+        .route("/chat/stream", post(chat_stream))
+        .with_state(Arc::clone(&state));
     let gateway = ManagedTask::new(tokio::spawn(async move {
-        axum::serve(WriteTimeoutListener::new(listener, write_timeout), app).await.unwrap();
+        axum::serve(WriteTimeoutListener::new(listener, write_timeout), app)
+            .await
+            .unwrap();
     }));
     let mut socket = TcpStream::connect(address).await.unwrap();
     let body = br#"{"message":"slow"}"#;
-    let request = format!("POST /chat/stream HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", body.len());
+    let request = format!(
+        "POST /chat/stream HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
     socket.write_all(request.as_bytes()).await.unwrap();
     socket.write_all(body).await.unwrap();
     let mut client = BufReader::new(socket);
     let mut status = String::new();
-    tokio::time::timeout(Duration::from_secs(2), client.read_line(&mut status)).await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(2), client.read_line(&mut status))
+        .await
+        .unwrap()
+        .unwrap();
     loop {
         let mut line = String::new();
-        tokio::time::timeout(Duration::from_secs(2), client.read_line(&mut line)).await.unwrap().unwrap();
-        if line == "\r\n" { break; }
+        tokio::time::timeout(Duration::from_secs(2), client.read_line(&mut line))
+            .await
+            .unwrap()
+            .unwrap();
+        if line == "\r\n" {
+            break;
+        }
         assert!(!line.is_empty(), "response headers must be complete");
     }
     // 保持连接但不读取正文，直到发送缓冲区被填满。
     let observed = wait_until(Duration::from_secs(4), || {
-        worker.counter() == 0 && state.concurrency.available_permits() == 2
+        worker.counter() == 0
+            && state.concurrency.available_permits() == 2
             && closed.load(Ordering::Relaxed)
-    }).await;
+    })
+    .await;
     let chunks_produced = produced.load(Ordering::Relaxed);
     let inflight = worker.counter();
     let permits = state.concurrency.available_permits();
@@ -432,12 +469,21 @@ async fn slow_client_write_timeout_releases_stream_resources(
     let upstream_result = upstream.stop().await;
 
     assert_eq!(status, "HTTP/1.1 200 OK\r\n");
-    assert!(chunks_produced > 1, "upstream must send enough data to exercise backpressure");
+    assert!(
+        chunks_produced > 1,
+        "upstream must send enough data to exercise backpressure"
+    );
     if should_timeout {
-        assert!(observed.is_ok(), "stalled write should close upstream and release resources");
+        assert!(
+            observed.is_ok(),
+            "stalled write should close upstream and release resources"
+        );
         assert_eq!((inflight, permits), (0, 2));
     } else {
-        assert!(observed.is_err(), "without a short write deadline the stream should remain active");
+        assert!(
+            observed.is_err(),
+            "without a short write deadline the stream should remain active"
+        );
         assert_eq!((inflight, permits), (1, 1));
     }
     assert!(gateway_result.unwrap_err().is_cancelled());

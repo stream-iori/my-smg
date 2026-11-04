@@ -37,7 +37,7 @@ self.routers.get(default_id).map(|r| r.clone())
 
 ```rust
 fn load_config(input: &str) -> Result<GatewayConfig, serde_json::Error> {
-    let config = match GatewayConfig::from_json(input) {
+    let config = match GatewayConfig::parse_json(input) {
         Ok(config) => config,
         Err(error) => return Err(error),
     };
@@ -87,7 +87,7 @@ the `?` operator can only be used in a function that returns `Result` or `Option
 使用 `?` 后，成功分支的 `Result` 外壳被打开：
 
 ```rust
-let config = GatewayConfig::from_json(input)?;
+let config = GatewayConfig::parse_json(input)?;
 // config: GatewayConfig，不是 Result<GatewayConfig, _>
 ```
 
@@ -115,7 +115,7 @@ Result<GatewayConfig, Error>
 ## 直接返回
 
 ```rust
-fn from_json(input: &str) -> Result<Self, serde_json::Error> {
+fn parse_json(input: &str) -> Result<Self, serde_json::Error> {
     serde_json::from_str(input)
 }
 ```
@@ -125,7 +125,7 @@ fn from_json(input: &str) -> Result<Self, serde_json::Error> {
 ## 使用 `?`
 
 ```rust
-fn from_json(input: &str) -> Result<Self, serde_json::Error> {
+fn parse_json(input: &str) -> Result<Self, serde_json::Error> {
     let config = serde_json::from_str(input)?;
     // 在这里继续处理 config
     Ok(config)

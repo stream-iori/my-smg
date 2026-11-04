@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [Mutex 与 Guard：锁何时释放](mutex-and-guards.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/circuit_breaker/gate.rs](../../../../src/circuit_breaker/gate.rs)：`CircuitGate::lock_state` |
+| 源码入口 | [src/circuit_gate.rs](../../../../src/circuit_gate.rs)：`CircuitGate::lock_state` |
 | 阅读时机 | 按当前课程需要阅读，不据此跳过 learning 的阶段验收。 |
 
 ## `lock()` 为什么返回 `Result`

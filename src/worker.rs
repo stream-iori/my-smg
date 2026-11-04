@@ -1,13 +1,12 @@
-use crate::circuit_breaker::gate::CircuitGate;
-use std::{
-    fmt::Display,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
-    time::Duration,
-};
+//! 共享节点与请求计数凭证。
 
+use crate::circuit_gate::CircuitGate;
+use std::fmt::Display;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
+
+/// 最近一次健康探测结果，与熔断状态独立。
 #[derive(Debug, PartialEq, Eq)]
 pub enum HealthStatus {
     Healthy,
@@ -27,6 +26,7 @@ impl Display for HealthStatus {
     }
 }
 
+/// 共享节点；健康状态、在途计数和熔断入口由所有请求共同观察。
 #[derive(Debug)]
 pub struct Worker {
     id: String,
@@ -36,16 +36,20 @@ pub struct Worker {
     circuit_gate: Arc<CircuitGate>,
 }
 
-pub struct InFlightGuard<'a> {
-    worker: &'a Worker,
+/// 借用节点的计数凭证；销毁时减一，必须覆盖完整逻辑请求。
+#[must_use = "keep the guard until the request finishes"]
+pub struct InFlightGuard<'worker> {
+    worker: &'worker Worker,
 }
 
-impl<'a> Drop for InFlightGuard<'a> {
+impl<'worker> Drop for InFlightGuard<'worker> {
     fn drop(&mut self) {
         self.worker.decrement_count();
     }
 }
 
+/// 持有节点所有权的计数凭证，可随响应正文跨越处理器返回边界。
+#[must_use = "keep the guard until the response body finishes"]
 pub struct OwnedInFlightGuard {
     worker: Arc<Worker>,
 }
@@ -57,8 +61,9 @@ impl Drop for OwnedInFlightGuard {
 }
 
 impl Worker {
+    /// 新节点初始健康；使用固定的三次失败阈值和五秒冷却期。
     pub fn new(id: String, address: String) -> Self {
-        let circuit_gate = CircuitGate::new(3, Duration::from_secs(5))
+        let circuit_gate = CircuitGate::try_new(3, Duration::from_secs(5))
             .expect("fixed circuit breaker configuration must be valid");
 
         Self {
@@ -70,6 +75,7 @@ impl Worker {
         }
     }
 
+    /// 返回共享入口句柄，供申请拥有独立生命周期的熔断凭证。
     pub fn circuit_gate(&self) -> &Arc<CircuitGate> {
         &self.circuit_gate
     }
@@ -82,15 +88,18 @@ impl Worker {
         &self.address
     }
 
+    /// 当前逻辑请求数，包含重试和正文读取，排队阶段不计入。
     pub fn counter(&self) -> usize {
         self.counter.load(Ordering::Relaxed)
     }
 
+    /// 开始一次逻辑请求；必须保留返回的凭证直到请求结束。
     pub fn begin_request(&self) -> InFlightGuard<'_> {
         self.increment_count();
         InFlightGuard { worker: self }
     }
 
+    /// 开始一次由凭证持有节点的请求，适用于流式正文。
     pub fn begin_request_owned(self: &Arc<Self>) -> OwnedInFlightGuard {
         self.increment_count();
         OwnedInFlightGuard {
@@ -126,7 +135,8 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Instant};
+    use std::sync::Arc;
+    use std::time::Instant;
 
     use super::{HealthStatus, Worker};
     use crate::circuit_breaker::CircuitState;

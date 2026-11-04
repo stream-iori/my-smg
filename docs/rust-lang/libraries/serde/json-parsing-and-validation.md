@@ -7,14 +7,14 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [Serialize 与 Deserialize](serialize-and-deserialize.md) · [Option 与 Result：有无与成败](../../concepts/errors/option-and-result.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/config.rs](../../../../src/config.rs)：`from_json_validated` |
+| 源码入口 | [src/gateway_config.rs](../../../../src/gateway_config.rs)：`parse_json_validated` |
 | 阅读时机 | 按当前课程需要阅读，不据此跳过 learning 的阶段验收。 |
 
 ## 项目已经把两步拆开
 
 ```rust
-pub fn from_json_validated(input: &str) -> Result<Self, ConfigLoadError> {
-    let config = Self::from_json(input)?;
+pub fn parse_json_validated(input: &str) -> Result<Self, ConfigLoadError> {
+    let config = Self::parse_json(input)?;
     config.validate()?;
     Ok(config)
 }

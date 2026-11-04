@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [错误枚举、Error 与 source](../concepts/errors/error-and-source.md) · [Debug、Display 与 Formatter](../concepts/errors/debug-display-and-formatter.md) · [From 与 Into：为什么有两个转换入口](../concepts/errors/from-and-into.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/config.rs](../../../src/config.rs)：`ConfigLoadError` |
+| 源码入口 | [src/gateway_config.rs](../../../src/gateway_config.rs)：`ConfigLoadError` |
 | 阅读时机 | 进阶扩展，主线可以跳过。 |
 
 ## thiserror：`Error`

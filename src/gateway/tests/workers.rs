@@ -1,6 +1,14 @@
 //! 节点管理：注册、重复 ID、非法地址、移除及移除后的可见行为。
-
-use super::*;
+use crate::gateway::chat::chat;
+use crate::gateway::gateway_state::ChatRequest;
+use crate::gateway::management::{add_worker, health, remove_worker};
+use crate::gateway::tests::support::{empty_gateway_state, gateway_state_with_workers};
+use axum::Json;
+use axum::extract::{Path as AxumPath, State};
+use axum::http::StatusCode;
+use my_smg::gateway_config::WorkerConfig;
+use my_smg::worker::Worker;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn registers_valid_worker() {
@@ -107,7 +115,9 @@ async fn removes_worker_once_and_returns_404_afterwards() {
 
     assert_eq!(first, StatusCode::NO_CONTENT);
 
-    let output = health(State(Arc::clone(&state))).await;
+    let output = health(State(Arc::clone(&state)))
+        .await
+        .expect("registry is usable");
     assert_eq!(output, "ready: 0 workers\n");
 
     let second = remove_worker(State(Arc::clone(&state)), AxumPath("worker-a".to_string())).await;
@@ -124,7 +134,9 @@ async fn handlers_reflect_worker_removal() {
 
     let state = gateway_state_with_workers(&[worker]);
 
-    let before = health(State(Arc::clone(&state))).await;
+    let before = health(State(Arc::clone(&state)))
+        .await
+        .expect("registry is usable");
 
     assert_eq!(
         before,
@@ -140,7 +152,9 @@ async fn handlers_reflect_worker_removal() {
         assert!(registry.remove("worker-a"));
     }
 
-    let after = health(State(Arc::clone(&state))).await;
+    let after = health(State(Arc::clone(&state)))
+        .await
+        .expect("registry is usable");
 
     assert_eq!(after, "ready: 0 workers\n");
 

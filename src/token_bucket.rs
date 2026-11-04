@@ -1,5 +1,8 @@
+//! 按整数时间结算的令牌桶。
+
 use std::time::{Duration, Instant};
 
+/// 整数令牌桶；每个补充间隔增加一枚，空闲累计不超过容量。
 #[derive(Debug)]
 pub struct TokenBucket {
     //总容量
@@ -16,13 +19,14 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    pub fn new(
+    /// 创建初始满桶；容量与补充间隔必须大于零，now 为统一时间基准。
+    pub fn try_new(
         capacity: usize,
         refill_interval: Duration,
         now: Instant,
     ) -> Result<Self, &'static str> {
         if capacity == 0 {
-            return Err("capacity must be grater than zero");
+            return Err("capacity must be greater than zero");
         }
 
         if refill_interval.is_zero() {
@@ -69,6 +73,7 @@ impl TokenBucket {
         self.last_refill = now - remainder;
     }
 
+    /// 先按时间补充，再尝试扣一枚；失败不透支，早于时间基准不补充。
     pub fn try_acquire(&mut self, now: Instant) -> bool {
         //先结算时间带来的新额度.
         self.refill(now);
@@ -89,8 +94,8 @@ mod tests {
     fn bucket() -> (Instant, TokenBucket) {
         // 起点与桶一起返回，确保整条时间序列使用同一个时间基准。
         let start = Instant::now();
-        let bucket =
-            TokenBucket::new(2, Duration::from_millis(100), start).expect("valid configuration");
+        let bucket = TokenBucket::try_new(2, Duration::from_millis(100), start)
+            .expect("valid configuration");
         (start, bucket)
     }
 
@@ -99,7 +104,7 @@ mod tests {
     #[case::zero_interval(2, Duration::ZERO)]
     fn rejects_invalid_configuration(#[case] capacity: usize, #[case] refill_interval: Duration) {
         let start = Instant::now();
-        assert!(TokenBucket::new(capacity, refill_interval, start).is_err());
+        assert!(TokenBucket::try_new(capacity, refill_interval, start).is_err());
     }
 
     #[test]

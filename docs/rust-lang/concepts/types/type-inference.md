@@ -176,7 +176,7 @@ Rust 会从上下文推断多种信息，但不同占位符含义不同：
 例如：
 
 ```rust
-fn from_json(input: &str) -> Result<GatewayConfig, serde_json::Error> {
+fn parse_json(input: &str) -> Result<GatewayConfig, serde_json::Error> {
     serde_json::from_str(input)
 }
 ```

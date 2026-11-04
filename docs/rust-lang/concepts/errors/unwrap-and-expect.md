@@ -22,7 +22,7 @@
 测试有效输入时可以使用：
 
 ```rust
-let config = GatewayConfig::from_json(input)
+let config = GatewayConfig::parse_json(input)
     .expect("valid config should parse");
 ```
 

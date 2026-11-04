@@ -1,8 +1,11 @@
+//! 节点注册表与有序快照。
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::worker::Worker;
 
+/// 按 ID 保存节点；移除节点不破坏已经取得的共享句柄。
 #[derive(Default)]
 pub struct WorkerRegistry {
     workers: HashMap<String, Arc<Worker>>,
@@ -15,6 +18,7 @@ impl WorkerRegistry {
         }
     }
 
+    /// 注册节点；重复 ID 返回 false，并保留原节点。
     pub fn insert(&mut self, worker: Arc<Worker>) -> bool {
         let id = worker.id().to_string();
         if self.workers.contains_key(&id) {
@@ -24,6 +28,7 @@ impl WorkerRegistry {
         true
     }
 
+    /// 返回同一节点的共享句柄，不复制节点状态。
     pub fn get(&self, id: &str) -> Option<Arc<Worker>> {
         match self.workers.get(id) {
             Some(worker) => Some(Arc::clone(worker)),
@@ -31,10 +36,12 @@ impl WorkerRegistry {
         }
     }
 
+    /// 移除节点，返回此前是否存在；不取消在途请求。
     pub fn remove(&mut self, id: &str) -> bool {
         self.workers.remove(id).is_some()
     }
 
+    /// 返回按 ID 排序的共享句柄快照；成员固定，节点内部状态仍共享。
     pub fn snapshot(&self) -> Vec<Arc<Worker>> {
         let mut workers: Vec<Arc<Worker>> = self.workers.values().map(Arc::clone).collect();
         workers.sort_by(|left, right| left.id().cmp(right.id()));
@@ -45,10 +52,8 @@ impl WorkerRegistry {
 #[cfg(test)]
 mod tests {
     use super::WorkerRegistry;
-    use crate::{
-        policy::{FirstHealthy, Policy},
-        worker::{HealthStatus, Worker},
-    };
+    use crate::policy::{FirstHealthy, Policy};
+    use crate::worker::{HealthStatus, Worker};
     use std::sync::Arc;
 
     #[test]

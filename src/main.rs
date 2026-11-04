@@ -4,35 +4,31 @@
 mod gateway;
 mod metrics;
 mod shutdown;
-mod write_timeout;
+mod write_timeout_listener;
 
-use write_timeout::WriteTimeoutListener;
+use write_timeout_listener::WriteTimeoutListener;
 
-use axum::{
-    Json, Router,
-    extract::Request,
-    http::HeaderValue,
-    middleware::{self, Next},
-    response::Response,
-    routing::{delete, get, post},
-};
+use axum::extract::Request;
+use axum::http::HeaderValue;
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::{delete, get, post};
+use axum::{Json, Router};
 use gateway::{
     GatewayState, add_worker, chat, chat_stream, health, remove_worker, start_health_checks,
 };
-use my_smg::{
-    config::{GatewayConfig, PolicyKind},
-    policy::{FirstHealthy, Policy, RoundRobin},
-    token_bucket::TokenBucket,
-    worker::Worker,
-    worker_registry::WorkerRegistry,
-};
-use std::{
-    path::Path,
-    process,
-    sync::{Arc, Mutex, atomic::AtomicU64},
-    time::{Duration, Instant},
-};
-use tokio::{net::TcpListener, sync::Semaphore};
+use my_smg::gateway_config::{GatewayConfig, PolicyKind};
+use my_smg::policy::{FirstHealthy, Policy, RoundRobin};
+use my_smg::token_bucket::TokenBucket;
+use my_smg::worker::Worker;
+use my_smg::worker_registry::WorkerRegistry;
+use std::path::Path;
+use std::process;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RequestId(pub(crate) u64);
@@ -112,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         process::exit(2);
     };
 
-    let config = match GatewayConfig::from_file(Path::new(&config_path)) {
+    let config = match GatewayConfig::load(Path::new(&config_path)) {
         Ok(config) => config,
         Err(error) => {
             tracing::error!(
@@ -145,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         PolicyKind::RoundRobin => Box::new(RoundRobin::new()),
     };
 
-    let token_bucket = TokenBucket::new(2, Duration::from_secs(1), Instant::now())?;
+    let token_bucket = TokenBucket::try_new(2, Duration::from_secs(1), Instant::now())?;
 
     let state = Arc::new(GatewayState {
         client: reqwest::Client::builder().build()?,

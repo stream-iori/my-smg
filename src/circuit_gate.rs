@@ -1,11 +1,12 @@
-use super::{CircuitBreaker, CircuitState};
-use std::{
-    error::Error,
-    fmt,
-    sync::{Arc, Mutex, MutexGuard},
-    time::{Duration, Instant},
-};
+//! 共享熔断入口、尝试凭证和取消清理。
 
+use crate::circuit_breaker::{CircuitBreaker, CircuitState};
+use std::error::Error;
+use std::fmt;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+/// 共享状态已中毒，调用方必须拒绝访问，不能恢复内部数据。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CircuitGateError {
     Poisoned,
@@ -25,6 +26,11 @@ impl Error for CircuitGateError {}
 #[derive(Debug)]
 pub struct CircuitGate {
     inner: Mutex<GateState>,
+}
+
+enum AttemptOutcome {
+    Success,
+    Failure,
 }
 
 #[derive(Debug)]
@@ -54,8 +60,9 @@ pub struct CircuitPermit {
 }
 
 impl CircuitGate {
-    pub fn new(failure_threshold: usize, cooldown: Duration) -> Result<Self, &'static str> {
-        let breaker = CircuitBreaker::new(failure_threshold, cooldown)?;
+    /// 创建共享入口；失败阈值和冷却时长必须大于零。
+    pub fn try_new(failure_threshold: usize, cooldown: Duration) -> Result<Self, &'static str> {
+        let breaker = CircuitBreaker::try_new(failure_threshold, cooldown)?;
 
         Ok(Self {
             inner: Mutex::new(GateState {
@@ -69,6 +76,7 @@ impl CircuitGate {
         self.inner.lock().map_err(|_| CircuitGateError::Poisoned)
     }
 
+    /// 返回当前状态；毒锁返回错误。
     pub fn state(&self) -> Result<CircuitState, CircuitGateError> {
         // 使用? 表示有错误就自己向上抛了
         let inner = self.lock_state()?;
@@ -77,6 +85,8 @@ impl CircuitGate {
 
     // 调用方需要通过 Arc 持有 gate。
     // 凭证也持有一个 Arc，确保 gate 比请求活得更久。
+    /// 申请一次尝试的凭证；熔断拒绝返回 `Ok(None)`，毒锁返回错误。
+    /// 未提交结果便销毁凭证会取消尝试；半开探测取消会重新打开熔断。
     pub fn acquire(
         self: &Arc<Self>,
         now: Instant,
@@ -102,7 +112,7 @@ impl CircuitGate {
     fn record_result(
         &self,
         generation: &Arc<()>,
-        success: bool,
+        outcome: AttemptOutcome,
         now: Instant,
     ) -> Result<(), CircuitGateError> {
         let mut inner = self.lock_state()?;
@@ -114,7 +124,7 @@ impl CircuitGate {
 
         let previous = inner.breaker.state();
 
-        if success {
+        if matches!(outcome, AttemptOutcome::Success) {
             inner.breaker.record_success();
         } else {
             inner.breaker.record_failure(now);
@@ -146,16 +156,20 @@ impl CircuitGate {
 
 impl CircuitPermit {
     // 消费凭证：调用后不能再对同一个凭证记录失败。
+    /// 消费凭证并提交成功；旧轮次结果被忽略，毒锁返回错误。
     pub fn success(mut self, now: Instant) -> Result<(), CircuitGateError> {
         // 表示调用方已经提交结果，不表示内部更新一定成功。
         // 更新失败时返回 Err，Drop 不再重复尝试。
         self.finished = true;
-        self.gate.record_result(&self.generation, true, now)
+        self.gate
+            .record_result(&self.generation, AttemptOutcome::Success, now)
     }
 
+    /// 消费凭证并提交失败；一次尝试只能提交一次结果。
     pub fn failure(mut self, now: Instant) -> Result<(), CircuitGateError> {
         self.finished = true;
-        self.gate.record_result(&self.generation, false, now)
+        self.gate
+            .record_result(&self.generation, AttemptOutcome::Failure, now)
     }
 }
 
@@ -174,10 +188,8 @@ impl Drop for CircuitPermit {
 mod tests {
     use super::{CircuitGate, CircuitGateError};
     use crate::circuit_breaker::CircuitState;
-    use std::{
-        sync::Arc,
-        time::{Duration, Instant},
-    };
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     // 在另一个线程持锁时故意 panic，并等待线程退出，确保毒锁已生效。
     fn poison_gate(gate: &Arc<CircuitGate>) {
@@ -201,7 +213,7 @@ mod tests {
     fn old_result_cannot_complete_new_probe() {
         let now = Instant::now();
         let gate =
-            Arc::new(CircuitGate::new(1, Duration::from_secs(5)).expect("valid configuration"));
+            Arc::new(CircuitGate::try_new(1, Duration::from_secs(5)).expect("valid configuration"));
 
         // 两个请求在正常状态下先后获得放行。
         let old_request = gate
@@ -245,7 +257,7 @@ mod tests {
     fn dropping_normal_request_does_not_count_as_failure() {
         let now = Instant::now();
         let gate =
-            Arc::new(CircuitGate::new(1, Duration::from_secs(5)).expect("valid configuration"));
+            Arc::new(CircuitGate::try_new(1, Duration::from_secs(5)).expect("valid configuration"));
 
         let request = gate
             .acquire(now)
@@ -261,7 +273,7 @@ mod tests {
     fn dropping_probe_reopens_circuit() {
         let now = Instant::now();
         let gate =
-            Arc::new(CircuitGate::new(1, Duration::from_secs(5)).expect("valid configuration"));
+            Arc::new(CircuitGate::try_new(1, Duration::from_secs(5)).expect("valid configuration"));
 
         let request = gate
             .acquire(now)
@@ -288,7 +300,7 @@ mod tests {
     fn poisoned_gate_rejects_queries_and_requests() {
         let now = Instant::now();
         let gate =
-            Arc::new(CircuitGate::new(1, Duration::from_secs(5)).expect("valid configuration"));
+            Arc::new(CircuitGate::try_new(1, Duration::from_secs(5)).expect("valid configuration"));
 
         poison_gate(&gate);
 
@@ -303,7 +315,7 @@ mod tests {
     fn poisoned_gate_rejects_existing_permit_results() {
         let now = Instant::now();
         let gate =
-            Arc::new(CircuitGate::new(3, Duration::from_secs(5)).expect("valid configuration"));
+            Arc::new(CircuitGate::try_new(3, Duration::from_secs(5)).expect("valid configuration"));
 
         let successful_request = gate
             .acquire(now)
@@ -328,7 +340,7 @@ mod tests {
     fn dropping_probe_does_not_panic_when_gate_is_poisoned() {
         let now = Instant::now();
         let gate =
-            Arc::new(CircuitGate::new(1, Duration::from_secs(5)).expect("valid configuration"));
+            Arc::new(CircuitGate::try_new(1, Duration::from_secs(5)).expect("valid configuration"));
 
         let request = gate
             .acquire(now)
@@ -344,12 +356,8 @@ mod tests {
 
         poison_gate(&gate);
 
-        // 仅用于测试：观察 Drop 是否意外 panic。
-        let result = std::panic::catch_unwind(move || {
-            drop(probe);
-        });
-
-        assert!(result.is_ok(), "dropping the permit should not panic");
+        // 意外 panic 会直接使本测试失败。
+        drop(probe);
 
         // Drop 没有清除毒锁，也没有假装修复。
         assert_eq!(gate.state(), Err(CircuitGateError::Poisoned));

@@ -8,4 +8,4 @@
 
 | 文章 | 解决的问题 | 前置 | 源码入口 |
 |---|---|---|---|
-| [URL 解析与地址校验](parsing-and-validation.md) | 能解析的 URL 是否一定是合法 Worker 地址？ | [Option 与 Result：有无与成败](../../concepts/errors/option-and-result.md) | [src/config.rs](../../../../src/config.rs)：`GatewayConfig::validate` |
+| [URL 解析与地址校验](parsing-and-validation.md) | 能解析的 URL 是否一定是合法 Worker 地址？ | [Option 与 Result：有无与成败](../../concepts/errors/option-and-result.md) | [src/gateway_config.rs](../../../../src/gateway_config.rs)：`GatewayConfig::validate` |

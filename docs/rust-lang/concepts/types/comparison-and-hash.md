@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [PartialEq 与 Eq：怎样定义相等](equality.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/config.rs](../../../../src/config.rs)：`#[derive(Debug, Deserialize, PartialEq, Eq)]` |
+| 源码入口 | [src/gateway_config.rs](../../../../src/gateway_config.rs)：`#[derive(Debug, Deserialize, PartialEq, Eq)]` |
 | 阅读时机 | 按当前课程需要阅读，不据此跳过 learning 的阶段验收。 |
 
 ## `PartialOrd` 与 `Ord`：排序

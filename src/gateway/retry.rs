@@ -1,6 +1,6 @@
-use super::is_retryable_status;
 use axum::http::StatusCode;
-use std::{future::Future, time::Duration};
+use std::future::Future;
+use std::time::Duration;
 
 type HttpResponse = (StatusCode, String);
 
@@ -26,4 +26,11 @@ where
 
         attempt += 1;
     }
+}
+
+pub(super) fn is_retryable_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::BAD_GATEWAY | StatusCode::GATEWAY_TIMEOUT | StatusCode::SERVICE_UNAVAILABLE
+    )
 }

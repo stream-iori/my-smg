@@ -1,4 +1,14 @@
-use super::*;
+use crate::gateway::chat::chat;
+use crate::gateway::gateway_state::{ChatRequest, GatewayState};
+use crate::gateway::tests::support::{
+    ChatFixture, ChatFixtureConfig, ManagedTask, chat_fixture, wait_until,
+};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 fn spawn_chat(
     state: &Arc<GatewayState>,

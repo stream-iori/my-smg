@@ -7,16 +7,16 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [? 与 ??：成功继续，失败提前返回](../concepts/errors/question-mark.md) · [错误枚举、Error 与 source](../concepts/errors/error-and-source.md) · [JSON 解析与业务校验](../libraries/serde/json-parsing-and-validation.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/config.rs](../../../src/config.rs)：`GatewayConfig::from_file` |
+| 源码入口 | [src/gateway_config.rs](../../../src/gateway_config.rs)：`GatewayConfig::load` |
 | 阅读时机 | 按当前课程需要阅读，不据此跳过 learning 的阶段验收。 |
 
 ## 实际调用链与责任
 
 ```text
 main
-  ↓ GatewayConfig::from_file
-读取文件 → from_json_validated
-               ├── from_json：结构解析
+  ↓ GatewayConfig::load
+读取文件 → parse_json_validated
+               ├── parse_json：结构解析
                └── validate：业务规则
   ↓
 构造 Registry / Policy / GatewayState
@@ -39,7 +39,7 @@ main 决定启动错误的文字和退出码；底层保存具体错误，不直
 
 ```rust
 impl GatewayConfig {
-    pub fn from_json(input: &str) -> Result<Self, serde_json::Error> {
+    pub fn parse_json(input: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(input)
     }
 }
@@ -69,13 +69,13 @@ Err(serde_json::Error) JSON 语法或字段类型不符合要求
 main
   └─ start_gateway
        └─ load_config
-            └─ GatewayConfig::from_json
+            └─ GatewayConfig::parse_json
 ```
 
 如果最底层解析失败：
 
 ```text
-from_json 返回 Err
+parse_json 返回 Err
        │
        │ load_config 使用 ?
        ▼

@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [Rc 与 Arc：多个句柄共同拥有数据](../concepts/sharing/rc-and-arc.md) · [Mutex 与 Guard：锁何时释放](../concepts/sharing/mutex-and-guards.md) · [Drop 与 RAII：离开作用域如何收尾](../concepts/ownership/drop-and-raii.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/circuit_breaker/gate.rs](../../../src/circuit_breaker/gate.rs)：`CircuitPermit` |
+| 源码入口 | [src/circuit_gate.rs](../../../src/circuit_gate.rs)：`CircuitPermit` |
 | 阅读时机 | 按当前课程需要阅读，不据此跳过 learning 的阶段验收。 |
 
 ## 当前代码的状态与凭证

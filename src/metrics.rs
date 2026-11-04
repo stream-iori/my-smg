@@ -2,7 +2,8 @@
 
 use axum::http::StatusCode;
 use serde::Serialize;
-use std::{sync::Mutex, time::Duration};
+use std::sync::Mutex;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum StreamEnd {

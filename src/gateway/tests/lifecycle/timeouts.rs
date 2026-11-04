@@ -1,6 +1,19 @@
 //! 流式读取期限：用真实 HTTP 分段响应验证计时和资源释放。
-
-use super::*;
+use super::{request_stream, stream_fixture, stream_worker_state};
+use crate::gateway::gateway_state::ChatRequest;
+use crate::gateway::tests::support::{TestServer, start_test_server};
+use axum::body::Body;
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::routing::post;
+use axum::{Json, Router};
+use futures_util::StreamExt;
+use futures_util::stream;
+use rstest::rstest;
+use std::io;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::Instant as TokioInstant;
 
 /// 每个延迟对应一块正文；最后可保持连接打开，模拟上游停止输出。
 async fn chunk_server(delays: Vec<Duration>, stall_after_chunks: bool) -> TestServer {

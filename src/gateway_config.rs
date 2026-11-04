@@ -1,29 +1,35 @@
+//! 启动配置解析、业务校验和分层错误。
+
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt::{self, Display};
 use std::path::Path;
 use url::Url;
 
+/// JSON 中以 kebab-case 表示的策略名称。
+// 把 JSON 的 "round-robin" 映射到 RoundRobin。
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-// 把 JSON 的 "round-robin" 映射到RoundRobin
 #[serde(rename_all = "kebab-case")]
 pub enum PolicyKind {
     FirstHealthy,
     RoundRobin,
 }
 
+/// 节点注册信息；地址必须是可解析的 HTTP 或 HTTPS URL。
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct WorkerConfig {
     pub id: String,
     pub address: String,
 }
 
+/// 启动配置；解析和业务校验是两个独立步骤。
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct GatewayConfig {
     pub workers: Vec<WorkerConfig>,
     pub policy: PolicyKind,
 }
 
+/// 区分文件读取、JSON 解析和业务校验失败，保留底层错误链。
 #[derive(Debug)]
 pub enum ConfigLoadError {
     Read(std::io::Error),
@@ -76,11 +82,12 @@ impl Display for ConfigLoadError {
     }
 }
 
+/// 配置业务约束失败，携带用于定位问题的节点信息。
 #[derive(Debug, PartialEq, Eq)]
 pub enum ConfigError {
     EmptyWorkers,
     DuplicateWorkerId(String),
-    InvalidWorkerAddress(String, String),
+    InvalidWorkerAddress { worker_id: String, address: String },
 }
 
 impl Display for ConfigError {
@@ -94,7 +101,7 @@ impl Display for ConfigError {
             Self::DuplicateWorkerId(worker_id) => {
                 write!(f, "duplicate worker id: {worker_id}")
             }
-            Self::InvalidWorkerAddress(worker_id, address) => {
+            Self::InvalidWorkerAddress { worker_id, address } => {
                 write!(f, "invalid address for worker {worker_id}: {address}")
             }
         }
@@ -105,25 +112,27 @@ impl Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl GatewayConfig {
-    pub fn from_file(path: &Path) -> Result<Self, ConfigLoadError> {
+    /// 读取并校验配置；文件、JSON 和业务错误分别返回对应变体。
+    pub fn load(path: &Path) -> Result<Self, ConfigLoadError> {
         let input = std::fs::read_to_string(path)?;
-        Self::from_json_validated(&input)
+        Self::parse_json_validated(&input)
     }
 
-    pub fn from_json(input: &str) -> Result<Self, serde_json::Error> {
+    /// 仅解析 JSON，不保证业务约束有效。
+    pub fn parse_json(input: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(input)
         //? 表示   成功时取出 Ok 里面的值；  失败时让当前函数立即返回 Err。
-        //let config = serde_json::from_str(input)?;
-        //Ok(config)
     }
 
-    pub fn from_json_validated(input: &str) -> Result<Self, ConfigLoadError> {
-        let config = Self::from_json(input)?;
+    /// 解析并校验 JSON；成功结果满足 `validate` 的约束。
+    pub fn parse_json_validated(input: &str) -> Result<Self, ConfigLoadError> {
+        let config = Self::parse_json(input)?;
         config.validate()?;
         Ok(config)
     }
 
     //这里的(),是unit类型，表示成功了，但没有额外数据需要返回
+    /// 校验非空节点池、唯一 ID 和 HTTP(S) 地址；返回首个错误。
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.workers.is_empty() {
             //使用return提前返回
@@ -139,18 +148,18 @@ impl GatewayConfig {
             let parsed_url = match Url::parse(worker.address.as_str()) {
                 Ok(url) => url,
                 Err(_) => {
-                    return Err(ConfigError::InvalidWorkerAddress(
-                        worker.id.clone(),
-                        worker.address.clone(),
-                    ));
+                    return Err(ConfigError::InvalidWorkerAddress {
+                        worker_id: worker.id.clone(),
+                        address: worker.address.clone(),
+                    });
                 }
             };
 
             if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
-                return Err(ConfigError::InvalidWorkerAddress(
-                    worker.id.clone(),
-                    worker.address.clone(),
-                ));
+                return Err(ConfigError::InvalidWorkerAddress {
+                    worker_id: worker.id.clone(),
+                    address: worker.address.clone(),
+                });
             }
         }
 
@@ -166,7 +175,7 @@ mod tests {
     #[test]
     fn loads_valid_config_file() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("configs/example.json");
-        let config = GatewayConfig::from_file(&path).expect("example config should be valid");
+        let config = GatewayConfig::load(&path).expect("example config should be valid");
 
         assert_eq!(config.workers.len(), 2)
     }
@@ -175,7 +184,7 @@ mod tests {
     fn reports_missing_config_file() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("configs/does-not-exist.json");
 
-        let result = GatewayConfig::from_file(&path);
+        let result = GatewayConfig::load(&path);
 
         assert!(matches!(result, Err(ConfigLoadError::Read(_))));
     }
@@ -195,12 +204,12 @@ mod tests {
         }
         "#;
 
-        assert!(GatewayConfig::from_json_validated(valid).is_ok());
+        assert!(GatewayConfig::parse_json_validated(valid).is_ok());
 
         let malformed = "{";
 
         assert!(matches!(
-            GatewayConfig::from_json_validated(malformed),
+            GatewayConfig::parse_json_validated(malformed),
             Err(ConfigLoadError::Parse(_))
         ));
 
@@ -212,7 +221,7 @@ mod tests {
         "#;
 
         assert!(matches!(
-            GatewayConfig::from_json_validated(empty_workers),
+            GatewayConfig::parse_json_validated(empty_workers),
             Err(ConfigLoadError::Validation(ConfigError::EmptyWorkers))
         ));
     }
@@ -230,8 +239,11 @@ mod tests {
         );
 
         assert_eq!(
-            ConfigError::InvalidWorkerAddress("worker-a".to_string(), "not-a-url".to_string(),)
-                .to_string(),
+            ConfigError::InvalidWorkerAddress {
+                worker_id: "worker-a".to_string(),
+                address: "not-a-url".to_string()
+            }
+            .to_string(),
             "invalid address for worker worker-a: not-a-url"
         );
     }
@@ -251,12 +263,12 @@ mod tests {
         "#;
 
         let config =
-            GatewayConfig::from_json(input).expect("JSON should parse before address validation");
+            GatewayConfig::parse_json(input).expect("JSON should parse before address validation");
         assert_eq!(
-            Err(ConfigError::InvalidWorkerAddress(
-                "worker-a".to_string(),
-                "ftp://example.com/model".to_string()
-            )),
+            Err(ConfigError::InvalidWorkerAddress {
+                worker_id: "worker-a".to_string(),
+                address: "ftp://example.com/model".to_string()
+            }),
             config.validate()
         )
     }
@@ -275,12 +287,12 @@ mod tests {
         }
         "#;
         let config =
-            GatewayConfig::from_json(input).expect("JSON should parse before address validation");
+            GatewayConfig::parse_json(input).expect("JSON should parse before address validation");
         assert_eq!(
-            Err(ConfigError::InvalidWorkerAddress(
-                "worker-a".to_string(),
-                "not-a-url".to_string()
-            )),
+            Err(ConfigError::InvalidWorkerAddress {
+                worker_id: "worker-a".to_string(),
+                address: "not-a-url".to_string()
+            }),
             config.validate()
         )
     }
@@ -303,7 +315,7 @@ mod tests {
         }
         "#;
 
-        let config = GatewayConfig::from_json(input).expect("valid config should parse");
+        let config = GatewayConfig::parse_json(input).expect("valid config should parse");
         assert_eq!(
             Err(ConfigError::DuplicateWorkerId("worker-a".to_string())),
             config.validate()
@@ -315,7 +327,7 @@ mod tests {
         let input = r#"
         {"sdsds":"sdsdsd"
         "#;
-        let config_result = GatewayConfig::from_json(input);
+        let config_result = GatewayConfig::parse_json(input);
         assert!(config_result.is_err());
     }
 
@@ -328,7 +340,7 @@ mod tests {
         }
         "#;
 
-        let config = GatewayConfig::from_json(input).expect("valid config should parse");
+        let config = GatewayConfig::parse_json(input).expect("valid config should parse");
         assert_eq!(Err(ConfigError::EmptyWorkers), config.validate());
     }
 
@@ -350,7 +362,7 @@ mod tests {
         }
         "#;
 
-        let config = GatewayConfig::from_json(input).expect("valid config should parse");
+        let config = GatewayConfig::parse_json(input).expect("valid config should parse");
 
         assert_eq!(Ok(()), config.validate());
         assert_eq!(config.workers.len(), 2);

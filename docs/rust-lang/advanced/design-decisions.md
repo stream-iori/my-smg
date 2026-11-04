@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [Trait：类型需要提供什么能力](../concepts/types/traits-and-bounds.md) · [生命周期：引用不能比数据活得久](../concepts/ownership/lifetimes.md) |
-| 源码入口 | [src/config.rs](../../../src/config.rs)：`加载和校验的责任边界` |
+| 源码入口 | [src/gateway_config.rs](../../../src/gateway_config.rs)：`加载和校验的责任边界` |
 | 阅读时机 | 进阶扩展，主线可以跳过。 |
 
 ## 与 SOLID 和系统设计原则的关系

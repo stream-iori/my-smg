@@ -1,6 +1,13 @@
+use crate::gateway::chat::chat;
+use crate::gateway::gateway_state::{ChatRequest, GatewayState};
+use crate::gateway::tests::support::{ChatFixture, ChatFixtureConfig, chat_fixture};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tokio::time::error::Elapsed;
-
-use super::*;
 
 /// 只封装调用与测试超时，断言留在各测试中。
 async fn call_chat(state: &Arc<GatewayState>) -> Result<(StatusCode, String), Elapsed> {

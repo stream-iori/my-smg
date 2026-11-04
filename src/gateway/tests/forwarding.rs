@@ -1,7 +1,21 @@
 //! 转发行为：可重试状态、退避、单次/总超时，以及取消后停止请求。
 //! 外围 timeout 是测试保险，chat 内部的 timeout 才是被测行为。
+use crate::gateway::chat::chat;
+use crate::gateway::gateway_state::{ChatRequest, GatewayState};
+use crate::gateway::retry::is_retryable_status;
+use crate::gateway::tests::support::{
+    ChatFixture, ChatFixtureConfig, ManagedTask, chat_fixture, gateway_state_with_workers,
+    start_slow_body_server, start_slow_chat_server, wait_until,
+};
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use my_smg::worker::{HealthStatus, Worker};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use std::time::Instant;
 
-use super::*;
 use rstest::rstest;
 
 #[tokio::test]

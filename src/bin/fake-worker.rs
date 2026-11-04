@@ -1,18 +1,15 @@
-use axum::{
-    Json, Router,
-    extract::State,
-    http::StatusCode,
-    response::{Sse, sse::Event},
-    routing::{get, post},
-};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::Sse;
+use axum::response::sse::Event;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use futures_util::{Stream, stream};
 use serde::{Deserialize, Serialize};
-use std::{
-    convert::Infallible,
-    env, process,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::convert::Infallible;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::{env, process};
 use tokio::net::TcpListener;
 
 #[derive(Clone)]
@@ -54,7 +51,15 @@ async fn chat(
     let should_fail = {
         let mut remaining = match state.failures_remaining.lock() {
             Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+            Err(_) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(ChatResponse {
+                        worker_id: state.worker_id,
+                        reply: "failure counter unavailable".to_string(),
+                    }),
+                );
+            }
         };
 
         if *remaining == 0 {
@@ -181,4 +186,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppState, ChatRequest, chat};
+    use axum::Json;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn poisoned_failure_counter_returns_unavailable_json() {
+        let counter = Arc::new(Mutex::new(1));
+        let shared = Arc::clone(&counter);
+        let poisoned = std::thread::spawn(move || {
+            let _guard = shared.lock().expect("counter starts usable");
+            panic!("intentional poison");
+        })
+        .join();
+        assert!(poisoned.is_err());
+        let (status, Json(body)) = chat(
+            State(AppState {
+                worker_id: "a".to_string(),
+                delay: Duration::ZERO,
+                failures_remaining: counter,
+            }),
+            Json(ChatRequest {
+                message: "hello".to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body.worker_id, "a");
+        assert_eq!(body.reply, "failure counter unavailable");
+    }
 }

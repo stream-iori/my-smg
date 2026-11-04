@@ -1,14 +1,25 @@
 //! 测试工具：准备状态、启动假服务、管理任务生命周期和等待条件。
 //! 工具不替测试判断业务结果，断言保留在各测试用例中。
+use crate::gateway::gateway_state::{ChatRequest, GatewayState};
+use axum::http::StatusCode;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use my_smg::policy::RoundRobin;
+use my_smg::token_bucket::TokenBucket;
+use my_smg::worker::Worker;
+use my_smg::worker_registry::WorkerRegistry;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::time::Instant;
+use tokio::sync::Semaphore;
+use tokio::task::JoinHandle;
 
-use super::*;
 use std::sync::atomic::AtomicUsize;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-    task::JoinError,
-    time::error::Elapsed,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::task::JoinError;
+use tokio::time::error::Elapsed;
 
 /// 正常路径取消并等待任务；提前退出时 Drop 只负责请求取消。
 pub(super) struct ManagedTask<T> {
@@ -20,6 +31,16 @@ impl<T> ManagedTask<T> {
         Self {
             handle: Some(handle),
         }
+    }
+
+    pub(super) async fn join(&mut self) -> Result<T, JoinError> {
+        let result = self
+            .handle
+            .as_mut()
+            .expect("managed task owns its handle")
+            .await;
+        self.handle.take();
+        result
     }
 
     //`mut self` 不是 `&mut self`：方法取得对象所有权，调用后原变量不能再使用
@@ -104,7 +125,7 @@ pub(super) async fn chat_fixture(config: ChatFixtureConfig) -> ChatFixture {
         "worker-a".to_string(),
         server.address().to_string(),
     ));
-    let bucket = TokenBucket::new(
+    let bucket = TokenBucket::try_new(
         config.token_capacity,
         Duration::from_secs(60),
         Instant::now(),
@@ -155,7 +176,7 @@ pub(super) fn idle_worker() -> Arc<Worker> {
 
 /// 普通测试使用充足额度，避免限流干扰其他行为的验收。
 pub(super) fn gateway_state_with_workers(workers: &[Arc<Worker>]) -> Arc<GatewayState> {
-    let bucket = TokenBucket::new(100, Duration::from_secs(60), Instant::now())
+    let bucket = TokenBucket::try_new(100, Duration::from_secs(60), Instant::now())
         .expect("valid test bucket configuration");
 
     gateway_state_with_bucket(workers, bucket)

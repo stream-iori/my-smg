@@ -7,7 +7,7 @@
 | 阅读准备 | 内容 |
 |---|---|
 | 前置 | [Trait：类型需要提供什么能力](../types/traits-and-bounds.md) |
-| 源码入口 | [src/config.rs](../../../../src/config.rs)：`impl From<std::io::Error> for ConfigLoadError` |
+| 源码入口 | [src/gateway_config.rs](../../../../src/gateway_config.rs)：`impl From<std::io::Error> for ConfigLoadError` |
 | 阅读时机 | 按当前课程需要阅读，不据此跳过 learning 的阶段验收。 |
 
 ## 类型转换：Into、From、TryInto 与 TryFrom

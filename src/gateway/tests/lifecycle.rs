@@ -1,7 +1,23 @@
 //! 资源生命周期：多个任务共享同一 Worker，各自的 guard 独立释放。
 //! 取消必须等任务结束；Drop 只请求取消时，要等待计数实际归零。
+use crate::gateway::chat_stream::chat_stream;
+use crate::gateway::gateway_state::{ChatRequest, GatewayState};
+use crate::gateway::tests::support::{
+    ManagedTask, TestServer, gateway_state_with_bucket_and_queue, idle_worker,
+    start_slow_body_server, start_test_server, wait_until,
+};
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::Response;
+use axum::routing::post;
+use axum::{Json, Router};
+use my_smg::token_bucket::TokenBucket;
+use my_smg::worker::Worker;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
-use super::*;
 use futures_util::StreamExt;
 use rstest::rstest;
 
@@ -23,7 +39,7 @@ fn stream_worker_state_with_queue(
         server.address().to_string(),
     ));
 
-    let bucket = TokenBucket::new(100, Duration::from_secs(60), Instant::now())
+    let bucket = TokenBucket::try_new(100, Duration::from_secs(60), Instant::now())
         .expect("valid test bucket configuration");
 
     let state = gateway_state_with_bucket_and_queue(

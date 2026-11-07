@@ -4,19 +4,19 @@
 
 **模式拆开已有值并绑定名字；不会替你获取请求参数。**
 
-| 阅读准备 | 内容 |
-|---|---|
-| 前置 | [struct、enum、impl 与 Self](../values/struct-enum-and-impl.md) · [元组、元组结构体与 unit](../values/tuples-and-unit.md)基础部分；项目应用另按节标题补前置。 |
-| 源码入口 | [src/gateway.rs](../../../../src/gateway.rs)：State(state) |
-| 阅读时机 | 基础解构按需阅读；Axum 应用在阶段 5～6。 |
+| 阅读准备 | 内容                                                                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 前置     | [struct、enum、impl 与 Self](../values/struct-enum-and-impl.md) · [元组、元组结构体与 unit](../values/tuples-and-unit.md)基础部分；项目应用另按节标题补前置。 |
+| 源码入口 | [src/gateway.rs](../../../../src/gateway.rs)：State(state)                                                                                                    |
+| 阅读时机 | 基础解构按需阅读；Axum 应用在阶段 5～6。                                                                                                                      |
 
 ## 先拆普通值
 
-| 已有值 | 模式形状 | 绑定依据 |
-|---|---|---|
-| 二元组 | `let (left, right) = pair;` | 元素位置 |
-| 普通结构体 | `let Worker { id, .. } = worker;` | 字段名 |
-| 元组结构体 | `let Wrapper(value) = wrapper;` | 类型构造器名与字段位置 |
+| 已有值     | 模式形状                          | 绑定依据               |
+| ---------- | --------------------------------- | ---------------------- |
+| 二元组     | `let (left, right) = pair;`       | 元素位置               |
+| 普通结构体 | `let Worker { id, .. } = worker;` | 字段名                 |
+| 元组结构体 | `let Wrapper(value) = wrapper;`   | 类型构造器名与字段位置 |
 
 这些是形状示意，假定类型存在且字段可见，不是项目完整实现。
 
@@ -28,12 +28,45 @@ pair 的第 1 项 → right
 左侧模式负责拆与绑定，右侧表达式提供值。绑定非 Copy 字段可能移动它；
 借用的写法见[引用模式](reference-patterns.md)。
 
+## 闭包参数：相似外形，一边打包，一边拆包
+
+项目的 [流式转发](../../../../src/gateway/chat_stream.rs) 使用 `try_unfold` 保存读取状态。下面省略其他字段，展示相同的形状：
+
+```rust
+stream::try_unfold(
+    StreamState { upstream, log_guard, /* 其他字段 */ }, // 构造初始状态
+    |StreamState { mut upstream, mut log_guard, /* 其他字段 */ }| async move {
+        // 读取 upstream、更新 log_guard；需要继续时再构造下一轮状态
+    },
+)
+```
+
+```text
+第一个参数：构造值（打包）          第二个参数：闭包参数模式（拆包）
+StreamState {                      |StreamState {
+    upstream,      ──────────────>     mut upstream,
+    log_guard,     ──────────────>     mut log_guard,
+    ...                                ...
+}                                  }| ...
+```
+
+闭包只有一个参数：一个 `StreamState`。`|...|` 中直接写了解构模式，相当于先接收 `state`，再写 `let StreamState { mut upstream, mut log_guard, .. } = state;`。每次成功读到一块后，代码会把字段重新打包为下一轮的状态；结束或出错时不再返回下一状态。
+
+| 位置                                    | 含义                                                       |
+| --------------------------------------- | ---------------------------------------------------------- |
+| `StreamState { upstream, ... }`         | 表达式：把现有变量放进新结构体                             |
+| `\|StreamState { mut upstream, ... }\|` | 模式：从传入结构体取出字段，绑定新变量                     |
+| `mut upstream`                          | 这个新绑定可以被可变借用；`chunk()` 需要 `&mut self`       |
+| `mut log_guard`                         | 这个新绑定可以被可变借用；`set_outcome()` 需要 `&mut self` |
+
+`mut` 属于绑定，不是字段类型的一部分。判断时看后续操作是否需要重新赋值、修改值或可变借用；单纯移动值、把它装进下一轮状态不需要 `mut`。也可以先不写，根据编译器提示补上。
+
 ## 基础自查
 
-| 类型 | 问题 |
-|---|---|
-| 预测 | 二元组的第 1 项交给哪个名字？ |
-| 解释 | 字段名和位置分别用于哪种解构？ |
+| 类型 | 问题                                     |
+| ---- | ---------------------------------------- |
+| 预测 | 二元组的第 1 项交给哪个名字？            |
+| 解释 | 字段名和位置分别用于哪种解构？           |
 | 边界 | 三元组能直接被两个位置的模式完整匹配吗？ |
 
 先写下判断与原因，再用自己已有的代码验证；遇到疑问回查本篇，不需要提前读后续应用。
@@ -97,10 +130,10 @@ state: AppState
 
 这里的“extractor”和“解构”不是一回事：
 
-| 层次 | 负责什么 |
-|---|---|
-| Axum `State` extractor | 从 Router 的应用状态构造 `State<AppState>` 参数 |
-| Rust `State(state)` 模式 | 从这个元组结构体中取出内部值 |
+| 层次                     | 负责什么                                        |
+| ------------------------ | ----------------------------------------------- |
+| Axum `State` extractor   | 从 Router 的应用状态构造 `State<AppState>` 参数 |
+| Rust `State(state)` 模式 | 从这个元组结构体中取出内部值                    |
 
 框架怎样根据参数类型选择提取规则，见 [Extractor 原理：State、泛型与 trait 的最小例子](../../libraries/axum/extractor-mechanics.md)。
 
@@ -115,12 +148,12 @@ struct State<T>(T);
 
 它是一个泛型元组结构体。字段没有名字，通过 `.0` 访问。
 
-| 写法 | 含义 |
-|---|---|
-| `State<T>` | 内部字段类型为 T 的包装类型 |
-| `State<AppState>` | 内部字段类型为 AppState |
-| `State(data)` | 表达式：创建包装值，把 data 放进去 |
-| `wrapper.0` | 访问包装值的第一个字段 |
+| 写法                         | 含义                                    |
+| ---------------------------- | --------------------------------------- |
+| `State<T>`                   | 内部字段类型为 T 的包装类型             |
+| `State<AppState>`            | 内部字段类型为 AppState                 |
+| `State(data)`                | 表达式：创建包装值，把 data 放进去      |
+| `wrapper.0`                  | 访问包装值的第一个字段                  |
 | `let State(data) = wrapper;` | 模式解构：拆开包装，把内部值绑定给 data |
 
 ```text
@@ -130,6 +163,5 @@ wrapper: State<AppState>
 ```
 
 只定义这个结构体，还不会自动获得“提取”能力。规则来自后面的 trait 实现。
-
 
 综合题：框架构造参数和 Rust 模式拆开参数，分别发生在哪一步？

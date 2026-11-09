@@ -24,6 +24,20 @@ select! 适用于“任一事件发生就做决定”；join! 适用于“全部
 
 ## 语法与返回值
 
+每个分支的基本形状是 `模式 = Future => 处理代码`。`select!` 先推进右侧的 Future，再用左侧的模式匹配它**完成后返回的值**：
+
+```text
+Future.poll(cx)
+    ├─ Pending       → 还没有结果，等待后续唤醒
+    └─ Ready(结果)   → 用左侧模式匹配「结果」
+                         ├─ 匹配成功 → 执行右侧处理代码
+                         └─ 匹配失败 → 本次 select! 禁用该分支
+```
+
+例如 `Some(message) = receiver.recv()`：`recv()` 返回的 Future 就绪后，如果结果是 `Some("hello")`，就绑定 `message`；如果结果是 `None`，模式不匹配，本次禁用该分支。左边匹配的是 `Ready` **里面的值**，不是匹配 `Poll::Ready` 这个枚举本身。
+
+Future 不必由 `std::future::ready()` 创建：网络读取、接收消息和 `sleep` 等操作返回的 Future，完成时也会返回 `Poll::Ready`。`ready()` 只是创建一个立即就绪的 Future。
+
 ```rust
 // 独立教学函数；模拟业务尚未结束，但取消通知已经就绪。
 async fn choose_event() -> &'static str {
@@ -45,6 +59,18 @@ async fn choose_event() -> &'static str {
 | `_ = future` | 接受任意返回值并忽略，包括 Err |
 | `=> { ... }` | 获胜分支的处理代码 |
 | 分支最后的表达式 | 整个 select! 的返回值；各分支返回类型须兼容 |
+
+`_` 忽略的是 **Future 的结果**，不是右侧处理代码的结果。上例中，`ready(())` 完成后产生的 `()` 被 `_` 忽略；随后执行代码块，代码块最后的 `"cancel_requested"` 成为整个 `select!` 的结果。
+
+```text
+ready(()) → Ready(()) → 左侧 _ 忽略 ()
+                              ↓
+                       执行右侧代码块
+                              ↓
+                  select! 返回 "cancel_requested"
+```
+
+另一分支的 `pending::<u64>()` 每次被 poll 都返回 `Pending`，永远不产生可绑定给 `value` 的值。`u64` 只是声明输出类型；`let _ = value` 位于该分支内部，因此上例中也不会执行。
 
 分支中不用额外写 await，宏负责等待。上例必选第二分支，因为 pending 永不就绪。真实 I/O 若同时就绪，不应假设源码中上面的分支一定获胜；默认会随机选择检查起点来改善公平性。`biased;` 改成从上到下检查，但要由调用者避免后面的分支饥饿。
 

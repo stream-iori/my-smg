@@ -96,6 +96,7 @@ Tokio 调度任务 --> 从上述调用链继续推进
 ```
 
 `cx` 是本次推进使用的上下文，其中有任务的 `Waker`。返回 `Pending` 的异步组件需要正确登记后续通知；这里只使用库已经实现好的 `Sleep` 和网络组件。
+具体的状态、唤醒和固定关系见 [Poll、Context 与 Waker](../concepts/async/poll-context-waker.md) 和 [Pin 与 Unpin](../concepts/async/pin-and-unpin.md)。
 唤醒不等于立即执行，也不保证这一次就能完成；执行器稍后再次推进，组件仍可能返回 `Pending`。
 这不是按固定周期扫描所有流，也不需要为每条 SSE 事件创建线程。
 
